@@ -1,0 +1,832 @@
+---
+---
+title: "Recommendation sys"
+output: pdf_document
+---
+
+date: "2024-12-10"
+---
+
+```{r}
+#Libraries
+library(sf)
+library(ggplot2)
+library(tmap)
+library(dplyr)
+library(dplyr)
+library(janitor)    
+library(lubridate)
+library(tidyr)
+library(htmltools)
+```
+
+#NEW TERRITORIES MAP
+```{r}
+#hongkong shapefile
+hk_districts <- st_read("/Users/apple/Downloads/Hong_Kong_18_Districts_3574690825663895789")
+#map of all hongkong districts
+ggplot(data = hk_districts) +
+  geom_sf(aes(fill =ENAME)) +  
+  labs(title = "Map of all Districts in Hong Kong",
+       fill = "District") +
+  theme_minimal()
+```
+```{r}
+# Districts in NTE and NTW regions
+nte_districts <- c("SHA TIN", "TAI PO", "NORTH", "SAI KUNG") 
+ntw_districts <- c("KWAI TSING", "TSUEN WAN", "TUEN MUN", "YUEN LONG")
+# Subsetting the districts in NTE and NTW
+nte_districts_data <- hk_districts[hk_districts$ENAME %in% nte_districts, ]
+ntw_districts_data <- hk_districts[hk_districts$ENAME %in% ntw_districts, ]
+
+# Assigning colors to the NTE and NTW districts
+nte_colors <- c("#4CAF50", "#2196F3", "#00BCD4", "#FF9800")
+ntw_colors <- c("#673AB7", "#E91E63", "#FFC107", "#FFC107")
+nte_districts_data$color <- nte_colors
+ntw_districts_data$color <- ntw_colors
+
+# New territory map
+ggplot() +
+  geom_sf(data = nte_districts_data, aes(fill = color)) +
+  geom_sf(data = ntw_districts_data, aes(fill = color)) +
+  geom_sf_text(data = nte_districts_data, aes(label = ENAME), size = 3, color = "black", fontface = "bold") +
+  geom_sf_text(data = ntw_districts_data, aes(label = ENAME), size = 3, color = "black", fontface = "bold") +
+  scale_fill_identity() +
+  labs(title = "Map of NTE and NTW Districts in Hong Kong") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text = element_blank(),
+    axis.ticks = element_blank()
+  )
+```
+
+```{r load-data, include=TRUE}
+#DATA CLEANING
+#Check duplicates
+#Duplicate Rows in Each Dataset
+#install.packages("openxlsx")
+library(openxlsx)
+Traffic_data<- read.xlsx("/Users/apple/Downloads/Traffic.xlsx")
+Housing_prices <- read.csv("/Users/apple/Downloads/Housing prices.csv")
+School_data <- read.xlsx("/Users/apple/Downloads/School data.xlsx")
+Census_data <- read.csv("/Users/apple/Downloads/Census and Social information.csv")
+Housing_parking <- read.csv("/Users/apple/Downloads/Housing parking.csv")
+sum(duplicated(Housing_prices))  # Count of duplicate rows in Housing_prices
+sum(duplicated(School_data))    # Count of duplicate rows in School_data
+sum(duplicated(Census_data))    # Count of duplicate rows in Census_data
+sum(duplicated(Traffic_data))   # Count of duplicate rows in Traffic_data
+
+#There are no duplicates```{r}
+```
+```{r}
+#MISSING VALUES
+# Check for missing values and count them in each dataset
+sum(is.na(Housing_prices))  
+sum(is.na(School_data))     
+sum(is.na(Census_data))     
+sum(is.na(Traffic_data)) 
+#There are no missing values
+```
+```{r}
+#Normalizing categorical variables
+#SCHOOL DATA
+
+#Assign SESSION_RANK Based on Session Type
+School_data <- School_data %>%
+  mutate(SESSION_RANK = case_when(
+    SESSION == "WHOLE DAY" ~ 10,
+    SESSION == "P.M." ~ 7,
+    SESSION == "A.M." ~ 4,
+    SESSION == "EVENING" ~ 2,
+    TRUE ~ 0  # In case there are any unexpected values
+  ))
+```
+
+```{r}
+# View the updated SESSION_RANK column
+table(School_data$SESSION_RANK)
+#English category rank of schools
+#Assign RANK Based on English Category
+School_data <- School_data %>%
+  mutate(ENGLISH_CATEGORY_RANK = case_when(
+    `ENGLISH.CATEGORY` %in% c("International Schools (Primary)", "International Schools (Secondary)") ~ 10,
+    `ENGLISH.CATEGORY` %in% c("English Schools Foundation (Primary)", "English Schools Foundation (Secondary)") ~ 9,
+    `ENGLISH.CATEGORY` == "Government Secondary Schools" ~ 8,
+    `ENGLISH.CATEGORY` == "Aided Secondary Schools" ~ 7,
+    `ENGLISH.CATEGORY` == "Direct Subsidy Scheme Secondary Schools" ~ 6,
+    `ENGLISH.CATEGORY` == "Private Secondary Schools (Day/Evening)" ~ 5,
+    `ENGLISH.CATEGORY` == "Aided Primary Schools" ~ 4,
+    `ENGLISH.CATEGORY` == "Government Primary Schools" ~ 3,
+    `ENGLISH.CATEGORY` %in% c("Kindergartens", "Kindergarten-cum-child Care Centres") ~ 1,
+    TRUE ~ 0  # In case there are any unexpected values
+  ))
+head(School_data)
+
+```
+
+```{r}
+#ENGLISH_CATEGORY_RANK column
+table(School_data$ENGLISH_CATEGORY_RANK)
+#Rank based on finance type
+#Assign RANK Based on Finance Type ---
+School_data <- School_data %>%
+  mutate(FINANCE_TYPE_RANK = case_when(
+    `FINANCE.TYPE` == "ENGLISH SCHOOLS FOUNDATION" ~ 10,
+    `FINANCE.TYPE` == "DIRECT SUBSIDY SCHEME" ~ 9,
+    `FINANCE.TYPE` == "AIDED" ~ 8,
+    `FINANCE.TYPE` == "GOVERNMENT" ~ 7,
+    `FINANCE.TYPE` == "PRIVATE" ~ 5,
+    `FINANCE.TYPE` == "PRIVATE INDEPENDENT SCH SCHEME" ~ 3,
+    `FINANCE.TYPE` == "CAPUT" ~ 1,
+    TRUE ~ 0  
+  ))
+
+# FINANCE_TYPE_RANK column
+table(School_data$FINANCE_TYPE_RANK)
+
+# Assigning RANK Based on School Level 
+School_data <- School_data %>%
+  mutate(SCHOOL_LEVEL_RANK = case_when(
+    `SCHOOL.LEVEL` == "SECONDARY" ~ 10,
+    `SCHOOL.LEVEL` == "PRIMARY" ~ 8,
+    `SCHOOL.LEVEL` == "KINDERGARTEN-CUM-CHILD CARE CENTRES" ~ 6,
+    `SCHOOL.LEVEL` == "KINDERGARTEN" ~ 5,
+    TRUE ~ 0  
+  ))
+```
+```{r}
+# SCHOOL_LEVEL_RANK column
+table(School_data$SCHOOL_LEVEL_RANK)
+#districts for NTE and NTW
+nte_ntw_districts <- c("SAI KUNG", "SHA TIN", "TAI PO", "NORTH", "YUEN LONG", "KWAI TSING", "TSUEN WAN", "TUEN MUN")
+
+# Filtering School_data to keep only rows where DISTRICT is in NTE or NTW
+School_data <- School_data %>%
+  filter(DISTRICT %in% nte_ntw_districts)
+
+# Checking the filtered data
+table(School_data$DISTRICT)
+```
+```{r}
+#Column for region
+nte_districts <- c("SAI KUNG", "SHA TIN", "TAI PO", "NORTH
+")
+ntw_districts <- c("YUEN LONG", "KWAI TSING", "TSUEN WAN", "TUEN MUN")
+
+School_data <- School_data %>%
+  mutate(REGION = case_when(
+    DISTRICT %in% nte_districts ~ "NTE",  # New Territories East
+    DISTRICT %in% ntw_districts ~ "NTW",  # New Territories West
+    TRUE ~ "Other"  
+  ))
+#School rank
+# Combining all the individual ranks to generate a total score for each school
+colnames(School_data)
+School_data <- School_data %>%
+  mutate(
+    TOTAL_RANK = SESSION_RANK + ENGLISH_CATEGORY_RANK + FINANCE_TYPE_RANK + SCHOOL_LEVEL_RANK
+  )
+
+#  Ranking the schools based on the total rank
+School_data <- School_data %>%
+  arrange(desc(TOTAL_RANK)) %>%
+  mutate(RANK = row_number())
+
+#top 10 schools based on the rank
+top_schools <- School_data %>%
+  select(`ENGLISH.NAME`, DISTRICT, REGION, RANK) %>%  
+  slice_head(n = 50)
+# View the top 3 schools
+head(top_schools, n = 50)
+
+```
+```{r}
+##Housing parking
+colnames(Housing_parking)
+nte_districts <- c("SAI KUNG", "SHA TIN", "TAI PO", "NORTH")
+ntw_districts <- c("YUEN LONG", "KWAI TSING", "TSUEN WAN", "TUEN MUN")
+Housing_parking <- Housing_parking %>%
+  mutate(
+    Total_Parking = `For.Vehicles.Other.Than.Medium.and.Heavy.Goods.Vehicles..Buses..Motor.Cycles.and.Pedal.Cycles.` + 
+      `For.Goods.Vehicles` + 
+      `For.Coaches`,  # Calculate total parking spaces
+    REGION = case_when(
+      District %in% nte_districts ~ "NTE",   
+      District %in% ntw_districts ~ "NTW",   
+      TRUE ~ "Other"  # Assign "Other" for districts not in NTE or NTW
+    )
+  ) %>%
+  group_by(District, REGION) %>%  # Group by District and REGION
+  summarise(
+    Total_Parking = sum(Total_Parking, na.rm = TRUE),  # Sum parking spaces by district and region
+    .groups = "drop"  # Remove grouping after summarization
+  ) %>%
+  arrange(REGION, desc(Total_Parking))  # Sort by REGION and then by total parking
+
+# View the result
+print(Housing_parking)
+```
+
+```{r}
+####################Traffic data
+colnames(Traffic_data)
+nte_districts <- c("SAI KUNG", "SHA TIN", "TAI PO", "NORTH")
+ntw_districts <- c("YUEN LONG", "KWAI TSING", "TSUEN WAN", "TUEN MUN")
+
+# Add REGION column based on districts
+Traffic <- Traffic_data %>%
+  mutate(REGION = case_when(
+    District %in% nte_districts ~ "NTE",
+    District %in% ntw_districts ~ "NTW",
+    TRUE ~ "Other"
+  ))
+
+# Summarize total traffic (including all visitors) by District and Control Point
+Traffic_summary <- Traffic %>%
+  group_by(District, "Control Point", REGION) %>%
+  summarise(
+    Total_HongKong_Residents = sum(`Hong.Kong.Residents`, na.rm = TRUE),
+    Total_Mainland_Visitors = sum(`Mainland.Visitors`, na.rm = TRUE),
+    Total_Other_Visitors = sum(`Other.Visitors`, na.rm = TRUE),
+    Total_Traffic = sum(Total, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(REGION, desc(Total_Traffic))  
+
+# Summarize total traffic (arrivals and departures) by District
+Traffic_summary <- Traffic %>%
+  mutate(REGION = case_when(
+    District %in% nte_districts ~ "NTE",
+    District %in% ntw_districts ~ "NTW",
+    TRUE ~ "Other"
+  )) %>%
+  group_by(District, REGION) %>%
+  summarise(
+    Total_HongKong_Residents_Arrivals = sum(`Hong.Kong.Residents`[`Arrival./.Departure` == "Arrival"], na.rm = TRUE),
+    Total_HongKong_Residents_Departures = sum(`Hong.Kong.Residents`[`Arrival./.Departure` == "Departure"], na.rm = TRUE),
+    Total_Mainland_Visitors_Arrivals = sum(`Mainland.Visitors`[`Arrival./.Departure` == "Arrival"], na.rm = TRUE),
+    Total_Mainland_Visitors_Departures = sum(`Mainland.Visitors`[`Arrival./.Departure` == "Departure"], na.rm = TRUE),
+    Total_Other_Visitors_Arrivals = sum(`Other.Visitors`[`Arrival./.Departure` == "Arrival"], na.rm = TRUE),
+    Total_Other_Visitors_Departures = sum(`Other.Visitors`[`Arrival./.Departure` == "Departure"], na.rm = TRUE),
+    Total_Arrivals = sum(Total[`Arrival./.Departure` == "Arrival"], na.rm = TRUE),
+    Total_Departures = sum(Total[`Arrival./.Departure` == "Departure"], na.rm = TRUE),
+    Total_Traffic = sum(Total, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(REGION, desc(Total_Traffic))  # Sort by REGION and then by total traffic
+# View the result
+print(Traffic_summary)
+```
+```{r}
+###############
+###############Housing prices
+# Reshape the dataset from wide to long format
+Housing_long <- Housing_prices %>%
+  pivot_longer(cols = `KWAI.TSING`:`YUEN.LONG`,
+               names_to = "District", 
+               values_to = "Housing_Price") %>%
+  arrange(Year, District)
+
+# View the reshaped dataset
+print(Housing_long)
+```
+
+```{r}
+# Define NTE and NTW districts
+colnames(Housing_long)
+nte_districts <- c("SAI KUNG", "SHA TIN", "TAI PO", "NORTH")
+ntw_districts <- c("YUEN LONG", "KWAI TSING", "TSUEN WAN", "TUEN MUN")
+
+# Add a column for REGION
+Housing_long <- Housing_long %>%
+  mutate(REGION = case_when(
+    District %in% nte_districts ~ "NTE",   
+    District %in% ntw_districts ~ "NTW",   
+    TRUE ~ "Other"  
+  ))
+
+ggplot(Housing_long, aes(x = Year, y = Housing_Price, color = REGION, group = District)) +
+  geom_line(size = 1.2) +  # Bold lines
+  geom_text(data = Housing_long %>%
+              group_by(District) %>%
+              filter(Year == max(Year)),  # Filter to get last year for each district
+            aes(label = District), 
+            vjust = -0.5, size = 3, check_overlap = TRUE) +
+  labs(title = "Housing Price Trends by District (1999-2023)", 
+       x = "Year", 
+       y = "Housing Price (HKD)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Define the districts for NTE and NTW
+nte_districts <- c("SAI KUNG", "SHA TIN", "TAI PO", "NORTH")
+ntw_districts <- c("YUEN LONG", "KWAI TSING", "TSUEN WAN", "TUEN MUN")
+
+# average housing price for each district, region, and rank by price
+Housing_summary <- Housing_prices %>%
+  pivot_longer(cols = starts_with("KWAI.TSING"):starts_with("YUEN.LONG"),
+               names_to = "District", 
+               values_to = "Housing_Price") %>%
+  group_by(District) %>%
+  summarise(Average_Housing_Price = mean(Housing_Price, na.rm = TRUE)) %>%
+  mutate(REGION = case_when(
+    District %in% nte_districts ~ "NTE",   
+    District %in% ntw_districts ~ "NTW",   
+    TRUE ~ "Other"  
+  )) %>%
+  arrange(Average_Housing_Price)  # Sorting by Average_Housing_Price (ascending)
+
+# View the result
+print(Housing_summary)
+```
+
+```{r}
+##################Census and social  information
+# Define the districts for NTE and NTW in capital letters
+nte_districts <- c("SAI KUNG", "SHA TIN", "TAI PO", "NORTH")
+ntw_districts <- c("YUEN LONG", "KWAI TSING", "TSUEN WAN", "TUEN MUN")
+colnames(Census_data)
+
+
+# Add the REGION column to Census_data, considering the capitalized 'DISTRICT' column name
+Census_data <- Census_data %>%
+  mutate(REGION = case_when(
+    `DISTRICT` %in% nte_districts ~ "NTE",   
+    `DISTRICT` %in% ntw_districts ~ "NTW",   
+    TRUE ~ "Other"  
+  ))
+
+
+#Friendly neighbourhood is the one with many children
+# age distribution visualization
+# age group data to compare across districts
+Census_data %>%
+  gather(key = "Age_Group", value = "Population", "X..15", "X15...24", "X25...44", "X45...64", "X65.") %>%
+  ggplot(aes(x = DISTRICT, y = Population, fill = Age_Group)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(title = "Age Group Distribution by District", x = "District", y = "Population")
+
+```
+
+```{r}
+#Education
+# percentage of population with post-secondary education
+Census_data %>%
+  mutate(Post_Secondary_Percentage = (`Post.secondary..Degree.course` / `Total.population`) * 100) %>%
+  ggplot(aes(x = DISTRICT, y = Post_Secondary_Percentage, fill = REGION)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Post-Secondary Education Percentage by District", x = "District", y = "Percentage (%)")
+
+```
+
+```{r}
+#working population and employers
+# Plot of working population and employers by district
+ggplot(Census_data, aes(x = DISTRICT, y = `Working.population`, fill = REGION)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Working Population by District", x = "District", y = "Working Population")
+```
+
+```{r}
+# social dynamics
+# Plot divorce rates by district
+ggplot(Census_data, aes(x = DISTRICT, y = Divorces, fill = REGION)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Divorce Rates by District", x = "District", y = "Divorces")
+```
+```{r}
+Census_data <- Census_data %>%
+  mutate(
+    Post_Secondary_Percentage = (`Post.secondary..Degree.course` / `Total.population`) * 100,
+    Rank_Score = (`Working.population` * 0.6) + (Post_Secondary_Percentage * 0.4)
+  ) %>%
+  arrange(desc(Rank_Score))
+# Compare the number of working population in NTE and NTW
+ggplot(Census_data, aes(x = REGION, y = `Working.population`, fill = REGION)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Working Population by Region (NTE vs NTW)", x = "Region", y = "Working Population")
+```
+```{r}
+####Cluster analysis
+# Select relevant columns for clustering
+clustering_data <- Census_data %>%
+  select(`Total.population`, `Post.secondary..Degree.course`, `Working.population`, Divorces)
+
+# Normalize data for clustering
+clustering_data_scaled <- scale(clustering_data)
+
+# Perform k-means clustering (you can experiment with k)
+set.seed(123)
+kmeans_result <- kmeans(clustering_data_scaled, centers = 3)
+
+# Add cluster to the original data
+Census_data$Cluster <- kmeans_result$cluster
+
+# Visualize clustering
+ggplot(Census_data, aes(x = `Working.population`, y = `Post.secondary..Degree.course`, color = as.factor(Cluster))) +
+  geom_point() +
+  labs(title = "Cluster Analysis of Districts", x = "Working Population", y = "Post-Secondary Education")
+```
+
+```{r}
+#MERGE DATASET
+# Standardizing column names for consistency
+colnames(Census_data)[colnames(Census_data) == "DISTRICT"] <- "District"
+colnames(Housing_parking)[colnames(Housing_parking) == "District"] <- "District"
+colnames(Housing_long)[colnames(Housing_long) == "District"] <- "District"
+colnames(Traffic)[colnames(Traffic) == "District"] <- "District"
+colnames(School_data)[colnames(School_data) == "DISTRICT"] <- "District"
+colnames(Census_data)[colnames(Census_data) == "District"] <- "District"
+
+
+```
+
+```{r}
+
+# Function to calculate mode
+get_mode <- function(x) {
+  ux <- unique(na.omit(x))
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# Aggregating School_data by District
+School_data_agg <- School_data %>%
+  select(-c(ENGLISH.NAME, ENGLISH.ADDRESS, LONGITUDE, LATITUDE, EASTING, NORTHING, TELEPHONE, FAX.NUMBER, WEBSITE, RELIGION)) %>%
+  group_by(District) %>%
+  summarize(
+    Avg_SCHOOL_NO = mean(as.numeric(SCHOOL.NO.), na.rm = TRUE), 
+    Most_Common_ENGLISH_CATEGORY = get_mode(ENGLISH.CATEGORY),
+    Avg_SESSION_RANK = mean(as.numeric(SESSION_RANK), na.rm = TRUE),
+    Avg_ENGLISH_CATEGORY_RANK = mean(as.numeric(ENGLISH_CATEGORY_RANK), na.rm = TRUE),
+    Avg_FINANCE_TYPE_RANK = mean(as.numeric(FINANCE_TYPE_RANK), na.rm = TRUE),
+    Avg_SCHOOL_LEVEL_RANK = mean(as.numeric(SCHOOL_LEVEL_RANK), na.rm = TRUE),
+    Avg_TOTAL_RANK = mean(as.numeric(TOTAL_RANK), na.rm = TRUE),
+    Avg_RANK = mean(as.numeric(RANK), na.rm = TRUE),
+    Most_Common_STUDENTS_GENDER = get_mode(STUDENTS.GENDER),
+    Most_Common_SESSION = get_mode(SESSION),
+    Most_Common_FINANCE_TYPE = get_mode(FINANCE.TYPE),
+    Most_Common_SCHOOL_LEVEL = get_mode(SCHOOL.LEVEL)
+  )
+
+# View the first few rows of the aggregated School_data
+head(School_data_agg)
+
+```
+
+
+```{r}
+# Merge step-by-step
+merged_data <- Census_data %>%
+  left_join(Housing_parking, by = "District")
+
+gc() # Clear memory
+
+merged_data <- merged_data %>%
+  left_join(Housing_long, by = "District")
+
+gc() # Clear memory
+
+merged_data <- merged_data %>%
+  left_join(Traffic, by = "District")
+
+gc() # Clear memory
+
+merged_data <- merged_data %>%
+  left_join(School_data_agg, by = "District")
+
+gc() # Clear memory
+tail(merged_data)
+```
+
+```{r}
+# View duplicated rows
+
+duplicated_rows <- merged_data[duplicated(merged_data$District), ]
+View(duplicated_rows)
+
+#  remove duplicates
+#merged_data <- merged_data %>% distinct()
+
+# Aggregate School Data 
+#merged_data <- merged_data %>%
+  #group_by(District) %>%
+   #summarize(across(everything(), ~ if(is.numeric(.)) mean(., na.rm = TRUE) else first(.)))
+
+# Check for missing values
+colSums(is.na(merged_data))
+
+# Visualize missing data
+library(naniar)
+#vis_miss(merged_data)  
+# Impute missing values with the mean 
+# Impute missing values for numerical columns with the mean
+merged_data <- merged_data %>%
+  mutate(
+    Total_Parking = ifelse(is.na(Total_Parking), mean(Total_Parking, na.rm = TRUE), Total_Parking),
+    Housing_Price = ifelse(is.na(Housing_Price), mean(Housing_Price, na.rm = TRUE), Housing_Price),
+    Avg_SCHOOL_NO = ifelse(is.na(Avg_SCHOOL_NO), mean(Avg_SCHOOL_NO, na.rm = TRUE), Avg_SCHOOL_NO),
+    Avg_SESSION_RANK = ifelse(is.na(Avg_SESSION_RANK), mean(Avg_SESSION_RANK, na.rm = TRUE), Avg_SESSION_RANK),
+    Avg_ENGLISH_CATEGORY_RANK = ifelse(is.na(Avg_ENGLISH_CATEGORY_RANK), mean(Avg_ENGLISH_CATEGORY_RANK, na.rm = TRUE), Avg_ENGLISH_CATEGORY_RANK),
+    Avg_FINANCE_TYPE_RANK = ifelse(is.na(Avg_FINANCE_TYPE_RANK), mean(Avg_FINANCE_TYPE_RANK, na.rm = TRUE), Avg_FINANCE_TYPE_RANK),
+    Avg_SCHOOL_LEVEL_RANK = ifelse(is.na(Avg_SCHOOL_LEVEL_RANK), mean(Avg_SCHOOL_LEVEL_RANK, na.rm = TRUE), Avg_SCHOOL_LEVEL_RANK),
+    Avg_TOTAL_RANK = ifelse(is.na(Avg_TOTAL_RANK), mean(Avg_TOTAL_RANK, na.rm = TRUE), Avg_TOTAL_RANK)
+  )
+# Function to get the mode
+get_mode <- function(x) {
+  uniq_x <- unique(x)
+  uniq_x[which.max(tabulate(match(x, uniq_x)))]
+}
+
+# Impute missing values for categorical columns with the mode
+merged_data <- merged_data %>%
+  mutate(
+    Most_Common_ENGLISH_CATEGORY = ifelse(is.na(Most_Common_ENGLISH_CATEGORY), get_mode(Most_Common_ENGLISH_CATEGORY), Most_Common_ENGLISH_CATEGORY),
+    Most_Common_STUDENTS_GENDER = ifelse(is.na(Most_Common_STUDENTS_GENDER), get_mode(Most_Common_STUDENTS_GENDER), Most_Common_STUDENTS_GENDER),
+    Most_Common_SESSION = ifelse(is.na(Most_Common_SESSION), get_mode(Most_Common_SESSION), Most_Common_SESSION),
+    Most_Common_FINANCE_TYPE = ifelse(is.na(Most_Common_FINANCE_TYPE), get_mode(Most_Common_FINANCE_TYPE), Most_Common_FINANCE_TYPE),
+    Most_Common_SCHOOL_LEVEL = ifelse(is.na(Most_Common_SCHOOL_LEVEL), get_mode(Most_Common_SCHOOL_LEVEL), Most_Common_SCHOOL_LEVEL)
+  )
+# Impute missing values for numerical columns with the mean
+merged_data <- merged_data %>%
+  mutate(
+    Hong.Kong.Residents = ifelse(is.na(Hong.Kong.Residents), mean(Hong.Kong.Residents, na.rm = TRUE), Hong.Kong.Residents),
+    Mainland.Visitors = ifelse(is.na(Mainland.Visitors), mean(Mainland.Visitors, na.rm = TRUE), Mainland.Visitors),
+    Other.Visitors = ifelse(is.na(Other.Visitors), mean(Other.Visitors, na.rm = TRUE), Other.Visitors),
+    Total = ifelse(is.na(Total), mean(Total, na.rm = TRUE), Total),
+    Avg_SCHOOL_NO = ifelse(is.na(Avg_SCHOOL_NO), mean(Avg_SCHOOL_NO, na.rm = TRUE), Avg_SCHOOL_NO),
+    Avg_SESSION_RANK = ifelse(is.na(Avg_SESSION_RANK), mean(Avg_SESSION_RANK, na.rm = TRUE), Avg_SESSION_RANK),
+    Date = ifelse(is.na(Date), mean(Date, na.rm = TRUE), Date)  # If Date is numeric, else use mode for categorical
+  )
+
+# Function to get the mode (for categorical data)
+get_mode <- function(x) {
+  uniq_x <- unique(x)
+  uniq_x[which.max(tabulate(match(x, uniq_x)))]
+}
+
+# Impute missing values for categorical columns with the mode
+merged_data <- merged_data %>%
+  mutate(
+    REGION.x.x = ifelse(is.na(REGION.x.x), get_mode(REGION.x.x), REGION.x.x),
+    REGION.y.y = ifelse(is.na(REGION.y.y), get_mode(REGION.y.y), REGION.y.y),
+    Control.Point = ifelse(is.na(Control.Point), get_mode(Control.Point), Control.Point),
+    Most_Common_ENGLISH_CATEGORY = ifelse(is.na(Most_Common_ENGLISH_CATEGORY), get_mode(Most_Common_ENGLISH_CATEGORY), Most_Common_ENGLISH_CATEGORY)
+  )
+
+
+
+
+colnames(merged_data) <- make.names(colnames(merged_data))  # Replaces spaces and symbols with dots
+
+# Check data types
+str(merged_data)
+
+# Convert  columns
+merged_data <- merged_data %>%
+  mutate(
+    Year = as.integer(Year),
+    District = as.factor(District),
+    Housing_Price = as.numeric(Housing_Price),
+    Total_Parking = as.numeric(Total_Parking)
+  )
+
+
+print(head(merged_data))
+```
+```{r}
+# Check missing values again
+colSums(is.na(merged_data))
+
+```
+
+```{r}
+#############EXPLORATORY DATA ANALYSIS
+#Data Overview
+str(merged_data)
+dim(merged_data)
+
+#chcek missing
+colSums(is.na(merged_data))
+#Summary statistics
+summary(merged_data)
+
+```
+
+```{r}
+#Univariate analysis
+table(merged_data$REGION.y,merged_data$REGION.x)
+barplot(table(merged_data$REGION.y,merged_data$REGION.x))
+hist(merged_data$`Total.population`, main = "Total Population Distribution", xlab = "Total Population")
+boxplot(merged_data$`Housing_Price`, main = "Housing Price Distribution", ylab = "Price")
+#Outlier detection
+boxplot(merged_data$Housing_Price, main = "Boxplot for Housing Prices")
+#Bivariate Analysis
+#Numerical vs numerical
+plot(merged_data$`Housing_Price`, merged_data$`Total.population`, 
+     main = "Housing Price vs Total Population", 
+     xlab = "Housing Price", ylab = "Total Population")
+cor(merged_data$Housing_Price, merged_data$`Total.population`, use = "complete.obs")
+#correlation between housing price and totalpopulation=0.4719672
+
+```
+
+```{r}
+#Categorical vs. Numerical:
+
+#Boxplot of housing prices for each region
+boxplot(Housing_Price ~ REGION.x, data = merged_data, 
+        main = "Housing Prices by Region", 
+        xlab = "Region", ylab = "Housing Price")
+```
+```{r}
+# columns that are "constant" (have only one unique value excluding NA)
+constant_cols <- sapply(merged_data, function(col) length(unique(na.omit(col))) == 1)
+
+# Drop these constant columns
+merged_data <- merged_data[, !constant_cols]
+
+```
+
+
+```{r}
+#Multivariate Analysis
+#Heatmap of correlations between numerical variables:
+library(ggcorrplot)
+num_data <- merged_data %>% select_if(is.numeric)
+constant_cols <- sapply(num_data, function(x) sd(x, na.rm = TRUE) == 0)
+constant_cols
+num_data <- num_data[, !constant_cols]
+corr_matrix <- cor(num_data, use = "complete.obs")
+ggcorrplot(corr_matrix, lab = TRUE)
+
+#Principal Component Analysis (PCA) for dimensionality reduction and pattern discovery:
+library(FactoMineR)
+pca_results <- PCA(merged_data %>% select_if(is.numeric), graph = TRUE)
+```
+
+```{r}
+colnames(merged_data)
+```
+
+```{r}
+#Key Insights and Visualization
+
+ggplot(merged_data, aes(x = Housing_Price)) +
+  geom_histogram(binwidth = 5000, fill = "steelblue", color = "white") +
+  labs(title = "Distribution of Housing Prices", x = "Housing_Price", y = "Frequency")
+```
+
+```{r}
+#Interactive plot#s
+library(plotly)
+#plot_ly(merged_data, x = ~Housing_Price, y = ~Total.population, type = 'scatter', mode = 'markers')
+```
+```{r}
+#Correlation analysis
+# Calculate Pearson's correlation for relevant variables
+
+# Calculate Pearson's correlation for relevant numeric variables
+correlation_matrix <- cor(merged_data[c("Housing_Price", "Total.population", "Total", 
+                                        "Total_Parking", "Post.secondary..Degree.course", 
+                                        "Rank_Score", "Working.population", "Divorces", 
+                                        "Hong.Kong.Residents", "Mainland.Visitors", 
+                                        "Other.Visitors", "Avg_SCHOOL_NO", 
+                                        "Avg_SESSION_RANK", "Avg_ENGLISH_CATEGORY_RANK", 
+                                        "Avg_FINANCE_TYPE_RANK", "Avg_SCHOOL_LEVEL_RANK", 
+                                        "Avg_TOTAL_RANK", "Avg_RANK")], 
+                          use = "complete.obs")
+
+# View the correlation matrix
+print(correlation_matrix)
+
+```
+
+```{r}
+#Visualize the correlation matrix
+
+library(reshape2)
+library(ggplot2)
+
+# Reshape the correlation matrix for ggplot
+correlation_melt <- melt(correlation_matrix)
+ggplot(correlation_melt, aes(Var1, Var2, fill = value)) +
+  geom_tile() + 
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) + 
+  theme_minimal() + 
+  labs(title = "Correlation Heatmap", x = "", y = "")
+
+```
+
+```{r}
+#Statistical Tests
+#t-test
+#comparing house prices between New Territories East (NTE) and New Territories West (NTW).
+# Perform t-test for house prices between NTE and NTW
+colnames(Housing_long)
+t_test_result <- t.test(Housing_Price ~REGION.x, data = merged_data)
+print(t_test_result)
+#If the p-value is less than 0.05, it suggests that the means between the two regions are significantly different
+```
+```{r}
+#ANOVA
+# ANOVA to compare house prices across different districts
+anova_result <- aov(Housing_Price ~ District, data = merged_data)
+summary(anova_result)
+# ANOVA table
+anova_table <- anova(anova_result)
+print(anova_table)
+colnames(merged_data)
+##Linear regression
+# Fit a linear regression model
+# Fit a linear regression model 
+model <- lm(Housing_Price ~ Hong.Kong.Residents + Mainland.Visitors + Avg_SCHOOL_LEVEL_RANK, data = merged_data)
+summary(model)
+# Diagnostic plots for the linear regression model
+par(mfrow = c(2, 2))  # Set up a 2x2 plot grid
+plot(model)
+```
+
+```{r}
+#Chi-Square Test for Categorical Data
+# Perform Chi-square test for Cluster vs REGION
+chi_test <- chisq.test(table(merged_data$Cluster, merged_data$REGION.x))
+```
+
+
+```{r}
+print(chi_test)
+```
+
+```{r}
+#Normalization to 3NF:
+colnames(merged_data)
+library(dplyr)
+#Structuring the Data into Separate Tables (for 2NF):
+# Demographic Data Table (District as Primary Key)
+district_data <- merged_data %>%
+  select(District, Total.population, Male, Female, Divorces)
+
+# Housing Data Table (District as Foreign Key)
+housing_data <- merged_data %>%
+  select(District, Housing_Price, Total_Parking)
+
+# School Data Table (District as Foreign Key)
+school_data <- merged_data %>%
+  select(District, Avg_SCHOOL_LEVEL_RANK, Avg_TOTAL_RANK)
+
+# Traffic Data Table (District as Foreign Key)
+traffic_data <- merged_data %>%
+  select(District, Hong.Kong.Residents, Mainland.Visitors)
+```
+
+```{r}
+###Create the Scoring System:
+# Min-Max scaling function to scale values between 0 and 10
+normalize_score <- function(x) {
+  return (10 * (x - min(x)) / (max(x) - min(x)))
+}
+
+# Score each characteristic
+merged_data$Housing_Price_Score <- normalize_score(merged_data$Housing_Price)
+merged_data$Avg_School_Rank_Score <- 10 - normalize_score(merged_data$Avg_SCHOOL_LEVEL_RANK)  # Higher rank gets higher score
+merged_data$Total_Parking_Score <- normalize_score(merged_data$Total_Parking)
+merged_data$Post_Secondary_Percentage_Score <- normalize_score(merged_data$Post_Secondary_Percentage)
+merged_data$Divorces_Score <- normalize_score(merged_data$Divorces)
+merged_data$Total_Residents_Score <- normalize_score(merged_data$Hong.Kong.Residents)
+merged_data$Total_Visitors_Score <- normalize_score(merged_data$Mainland.Visitors)
+
+# Combine scores for each district
+merged_data$Total_Score <- rowSums(merged_data[c("Housing_Price_Score", "Avg_School_Rank_Score", "Total_Parking_Score", 
+                                                 "Post_Secondary_Percentage_Score", "Divorces_Score", "Total_Residents_Score", 
+                                                 "Total_Visitors_Score")])
+
+# Normalize the total score (if necessary)
+merged_data$Total_Score <- normalize_score(merged_data$Total_Score)
+# Sort districts by Total_Score and display the top 3
+top_districts <- merged_data %>%
+  arrange(desc(Total_Score)) %>%
+  head(3)
+```
+```{r}
+# Display the top 3 districts along with their REGION (NTE or NTW)
+top_districts <- top_districts[, c("District", "Total_Score", "REGION.x")]
+
+```
+
+
+```{r}
+# Visualization of the top 3 districts, including region
+ggplot(top_districts, aes(x = reorder(District, Total_Score), y = Total_Score, fill = REGION.x)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("NTE" = "lightgreen", "NTW" = "lightblue")) + # Custom colors for NTE and NTW
+  theme_minimal() +
+  labs(title = "Top 3 Districts by Total Score", x = "District", y = "Total Score", fill = "Region") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+# Print the result
+print(top_districts)
+```
+
